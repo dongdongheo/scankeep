@@ -1,0 +1,144 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Home · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <h1>Security scanning overview</h1>
+      <p class="muted">Scankeep inventory, scan outcomes, and recent activity.</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="{{ url_for('scankeep.schedule_list') }}">View schedules</a>
+      <a class="button primary" href="{{ url_for('scankeep.manual_scans') }}">Start manual scan</a>
+    </div>
+  </div>
+
+  <section id="summary" class="summary-grid" aria-label="Scankeep statistics"></section>
+
+  <div class="dashboard-grid">
+    <section class="card chart-card">
+      <div>
+        <h2>Scan executions</h2>
+        <p class="muted">Whether scanner jobs completed successfully.</p>
+      </div>
+      <div id="execution-chart"></div>
+    </section>
+    <section class="card chart-card">
+      <div>
+        <h2>Quality gates</h2>
+        <p class="muted">Code-quality result for completed analyses.</p>
+      </div>
+      <div id="quality-chart"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="section-heading">
+      <div><h2>Recent scan activity</h2><p class="muted">Latest runs from manual, preset, and scheduled triggers.</p></div>
+      <button id="refresh-runs" class="secondary" type="button">Refresh</button>
+    </div>
+    {% set include_trigger_filter = true %}
+    {% include "scankeep/_scan_filters.html" %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Label / project target</th><th>Trigger</th><th>Server / project</th><th>Branch / commit</th><th>Execution</th><th>Result</th><th>Created / duration</th></tr></thead>
+        <tbody id="scans"></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const filters = Scankeep.createScanFilters();
+  let poller;
+
+  function summaryCard(label, value, detail, tone = "") {
+    return `
+      <article class="summary-card ${tone}">
+        <span>${Scankeep.escapeHtml(label)}</span>
+        <strong>${Number(value) || 0}</strong>
+        <small>${Scankeep.escapeHtml(detail)}</small>
+      </article>`;
+  }
+
+  function donut(passed, failed, labels) {
+    const total = passed + failed;
+    const passedShare = total ? Math.round((passed / total) * 100) : 0;
+    return `
+      <div class="donut-layout">
+        <div class="donut" style="--share:${passedShare}" role="img"
+             aria-label="${Scankeep.escapeHtml(`${passedShare}% ${labels[0].toLowerCase()}`)}">
+          <div><strong>${total ? `${passedShare}%` : "—"}</strong><span>${total ? labels[0] : "No data"}</span></div>
+        </div>
+        <dl class="chart-legend">
+          <div><dt><i class="legend-good"></i>${Scankeep.escapeHtml(labels[0])}</dt><dd>${passed}</dd></div>
+          <div><dt><i class="legend-bad"></i>${Scankeep.escapeHtml(labels[1])}</dt><dd>${failed}</dd></div>
+        </dl>
+      </div>`;
+  }
+
+  function renderDashboard(stats) {
+    Scankeep.element("summary").innerHTML = [
+      summaryCard("Security servers", stats.servers, "SonarQube instances connected"),
+      summaryCard("Project targets", stats.project_targets, "Projects ready to scan"),
+      summaryCard("Total scans", stats.scans, `${stats.active} currently active`),
+      summaryCard("Failed executions", stats.failed, "Scanner jobs needing attention", stats.failed ? "danger" : ""),
+      summaryCard("Failed quality gates", stats.quality_gate_failed, "Completed analyses needing fixes", stats.quality_gate_failed ? "warning" : ""),
+      summaryCard("Scheduled scans", stats.schedules, "Configured cron schedules"),
+    ].join("");
+    Scankeep.element("execution-chart").innerHTML = donut(
+      stats.succeeded,
+      stats.failed,
+      ["Succeeded", "Failed"],
+    );
+    Scankeep.element("quality-chart").innerHTML = donut(
+      stats.quality_gate_passed,
+      stats.quality_gate_failed,
+      ["Passed", "Failed"],
+    );
+  }
+
+  function renderHistory(scans) {
+    Scankeep.element("scans").innerHTML = Scankeep.jobRows(
+      scans, "No scans have been started."
+    );
+  }
+
+  async function loadHistory() {
+    const { scans } = await Scankeep.api(filters.scansPath());
+    renderHistory(scans);
+  }
+
+  async function loadStatsAndHistory() {
+    const [stats, history] = await Promise.all([
+      Scankeep.api("/dashboard"),
+      Scankeep.api(filters.scansPath()),
+    ]);
+    renderDashboard(stats);
+    renderHistory(history.scans);
+    clearTimeout(poller);
+    if (history.scans.some(job => ["queued", "running"].includes(job.status))) {
+      poller = setTimeout(
+        () => loadStatsAndHistory().catch(error => Scankeep.message(error.message, true)),
+        3000,
+      );
+    }
+  }
+
+  async function loadPage() {
+    await filters.load();
+    await loadStatsAndHistory();
+  }
+
+  Scankeep.element("scans").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.element("refresh-runs").addEventListener(
+    "click",
+    () => loadHistory().catch(error => Scankeep.message(error.message, true)),
+  );
+  filters.bind(loadHistory);
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

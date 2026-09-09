@@ -1,0 +1,70 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Project Target Details · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1 id="project-target-title">Project target</h1><p class="muted">Edit the security project, source repository, or credentials.</p></div>
+    <a href="{{ url_for('scankeep.project_target_management') }}">← Back to project targets</a>
+  </div>
+  <section class="card">
+    <form id="project-target-form" class="form-grid">
+      <label>Target name<input name="name" maxlength="120" required></label>
+      <label>Provider<select name="provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
+      <label class="full">HTTPS clone URL<input name="url" type="url" required></label>
+      <label class="full">Replacement token (optional)<input name="token" type="password" autocomplete="new-password" placeholder="Leave blank to keep current token"></label>
+      <label>Security server<select name="security_server_id" id="server-select" required></select></label>
+      <label>Sonar project key<input name="project_key" required></label>
+      <label class="full">Scan path inside repo (optional)<input name="scan_path"></label>
+      <div class="form-actions">
+        <button id="delete-project-target" class="danger" type="button">Delete target</button>
+        <button class="primary" type="submit">Validate and save</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const projectTargetId = {{ project_target_id|tojson }};
+
+  async function loadPage() {
+    const [projectTarget, serverResult] = await Promise.all([
+      Scankeep.api(`/project-targets/${encodeURIComponent(projectTargetId)}`),
+      Scankeep.api("/servers"),
+    ]);
+    Scankeep.element("project-target-title").textContent = projectTarget.name;
+    const form = Scankeep.element("project-target-form");
+    form.elements.name.value = projectTarget.name;
+    form.elements.provider.value = projectTarget.provider;
+    form.elements.url.value = projectTarget.url;
+    form.elements.project_key.value = projectTarget.project_key;
+    form.elements.scan_path.value = projectTarget.scan_path;
+    Scankeep.element("server-select").innerHTML = serverResult.servers.map(server =>
+      `<option value="${Scankeep.escapeHtml(server.id)}">${Scankeep.escapeHtml(server.name)}</option>`
+    ).join("");
+    form.elements.security_server_id.value = projectTarget.security_server_id;
+  }
+
+  Scankeep.element("project-target-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      const payload = Object.fromEntries(new FormData(event.target).entries());
+      await Scankeep.api(`/project-targets/${encodeURIComponent(projectTargetId)}`, {
+        method: "PATCH", body: JSON.stringify(payload),
+      });
+      event.target.elements.token.value = "";
+      Scankeep.message("Project target updated.");
+      await loadPage();
+    } catch (error) { Scankeep.message(error.message, true); }
+    finally { event.submitter.disabled = false; }
+  });
+  Scankeep.element("delete-project-target").addEventListener("click", async () => {
+    if (!window.confirm("Delete this project target?")) return;
+    try {
+      await Scankeep.api(`/project-targets/${encodeURIComponent(projectTargetId)}`, { method: "DELETE" });
+      window.location.href = "/scankeep/project-targets";
+    } catch (error) { Scankeep.message(error.message, true); }
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Compile
+        run: python -W error -m compileall -q scankeep tests
+      - name: Unit tests
+        run: python -W error::ResourceWarning -m unittest discover -s tests -p "test_*.py"
+      - name: Lint
+        if: matrix.python-version == '3.12'
+        run: ruff check scankeep tests
+      - name: Check formatting
+        if: matrix.python-version == '3.12'
+        run: ruff format --check scankeep tests
+      - name: Audit dependencies
+        if: matrix.python-version == '3.12'
+        run: pip-audit --requirement requirements.txt
+      - name: Build package
+        if: matrix.python-version == '3.12'
+        run: python -m pip wheel --no-deps --wheel-dir /tmp/wheels .
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build container
+        run: >-
+          docker build
+          --build-arg SECURITY_REFRESH=ci
+          --file deployment/Dockerfile
+          --tag scankeep:ci
+          .
+      - name: Inspect application package
+        run: docker run --rm --entrypoint python scankeep:ci -c "import scankeep"
+      - name: Scan container
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scankeep:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL

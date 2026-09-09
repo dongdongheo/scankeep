@@ -1,0 +1,64 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Schedules · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Scheduled scans</h1><p class="muted">Recurring scans claimed safely across portal workers.</p><p id="cron-hint" class="muted"></p></div>
+    <a class="button primary" href="{{ url_for('scankeep.schedule_create') }}">Add schedule</a>
+  </div>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th data-sort="name" aria-sort="none"><button class="sort-button" type="button">Name</button></th>
+          <th data-sort="target" aria-sort="none"><button class="sort-button" type="button">Project target</button></th>
+          <th data-sort="server" aria-sort="none"><button class="sort-button" type="button">Server / project</button></th>
+          <th data-sort="branch" aria-sort="none"><button class="sort-button" type="button">Branch</button></th>
+          <th data-sort="cron" aria-sort="none"><button class="sort-button" type="button">Cron (UTC)</button></th>
+          <th data-sort="status" aria-sort="none"><button class="sort-button" type="button">Status</button></th>
+          <th data-sort="next" aria-sort="none"><button class="sort-button" type="button">Next run</button></th>
+          <th data-sort="last" aria-sort="none"><button class="sort-button" type="button">Last run</button></th>
+        </tr></thead>
+        <tbody id="schedules"></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  Scankeep.element("cron-hint").textContent = Scankeep.cronHint();
+  const table = Scankeep.createSortableTable("schedules", {
+    name: schedule => schedule.name,
+    target: schedule => schedule.project_target_name,
+    server: schedule => `${schedule.security_server_name} ${schedule.project_key}`,
+    branch: schedule => schedule.branch,
+    cron: schedule => schedule.cron_expression,
+    status: schedule => schedule.enabled ? "Enabled" : "Paused",
+    next: schedule => schedule.next_run_at,
+    last: schedule => schedule.last_run_at,
+  }, schedules => schedules.length
+    ? schedules.map(schedule => `
+        <tr data-href="/scankeep/schedules/${encodeURIComponent(schedule.id)}">
+          <td><strong>${Scankeep.escapeHtml(schedule.name)}</strong><div class="meta">${Scankeep.escapeHtml(schedule.label || "no custom label")}</div></td>
+          <td>${Scankeep.escapeHtml(schedule.project_target_name)}<div class="meta">${Scankeep.escapeHtml(schedule.provider)}</div></td>
+          <td>${Scankeep.escapeHtml(schedule.security_server_name)}<div class="meta">${Scankeep.escapeHtml(schedule.project_key)}</div></td>
+          <td>${Scankeep.escapeHtml(schedule.branch)}</td>
+          <td><code>${Scankeep.escapeHtml(schedule.cron_expression)}</code></td>
+          <td>${Scankeep.status(schedule.enabled ? "Enabled" : "Paused")}</td>
+          <td>${Scankeep.escapeHtml(Scankeep.formatTime(schedule.next_run_at))}</td>
+          <td>${Scankeep.escapeHtml(Scankeep.formatTime(schedule.last_run_at))}</td>
+        </tr>`).join("")
+    : '<tr><td colspan="8" class="muted">No scan schedules configured.</td></tr>');
+
+  async function loadPage() {
+    const { schedules } = await Scankeep.api("/schedules");
+    table.setItems(schedules);
+  }
+
+  Scankeep.element("schedules").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

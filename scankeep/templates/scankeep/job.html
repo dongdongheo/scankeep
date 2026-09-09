@@ -1,0 +1,99 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Scan Details · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1 id="job-title">Scan details</h1><p id="job-summary" class="muted">Loading scan…</p></div>
+    <a href="{{ url_for('scankeep.home') }}">← Back to home</a>
+  </div>
+  <div class="grid">
+    <section class="card full">
+      <h2>Run metadata</h2>
+      <dl id="metadata" class="metadata"></dl>
+    </section>
+    <section class="card full">
+      <h2>SonarQube report</h2>
+      <div id="report" class="metrics"><div class="muted">No report available yet.</div></div>
+    </section>
+    <section class="card full">
+      <div class="item-head"><h2>Scanner logs</h2><button id="refresh-job" class="secondary" type="button">Refresh</button></div>
+      <pre id="logs">No logs yet.</pre>
+    </section>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const jobId = {{ job_id|tojson }};
+  let poller;
+
+  function renderMetadata(job) {
+    const fields = [
+      ["Job ID", job.id],
+      ["Label", job.label || "—"],
+      ["Execution status", job.status],
+      ["Execution phase", `${job.phase} (${job.progress}%)`],
+      ["Scan result", Scankeep.resultLabel(job)],
+      ["Trigger", job.preset_name ? `Preset: ${job.preset_name}` : job.schedule_name ? `Schedule: ${job.schedule_name}` : job.trigger_source],
+      ["Security server", job.security_server_name],
+      ["Server URL", job.server_url],
+      ["Project target", job.project_target_name],
+      ["Provider", job.provider],
+      ["Repository URL", job.repository_url],
+      ["Project key", job.project_key],
+      ["Scan path", job.scan_path || "repository root"],
+      ["Branch", job.branch],
+      ["Commit SHA", job.commit_sha || "—"],
+      ["Created", Scankeep.formatTime(job.created_at)],
+      ["Started", Scankeep.formatTime(job.started_at)],
+      ["Finished", Scankeep.formatTime(job.finished_at)],
+      ["Duration", Scankeep.formatDuration(job.started_at, job.finished_at)],
+      ["Execution error", job.error || "—"],
+    ];
+    Scankeep.element("metadata").innerHTML = fields.map(([name, value]) =>
+      `<div><dt>${Scankeep.escapeHtml(name)}</dt><dd>${Scankeep.escapeHtml(value)}</dd></div>`,
+    ).join("");
+  }
+
+  function renderReport(report) {
+    if (!report) {
+      Scankeep.element("report").innerHTML = '<div class="muted">No report available yet.</div>';
+      return;
+    }
+    const fields = {
+      quality_gate: report.quality_gate,
+      analysis_date: report.analysis_date,
+      ...(report.measures || {}),
+    };
+    Scankeep.element("report").innerHTML =
+      Object.entries(fields).map(([name, value]) =>
+        `<div class="metric">${Scankeep.escapeHtml(name.replaceAll("_", " "))}<strong>${Scankeep.escapeHtml(value || "—")}</strong></div>`,
+      ).join("") +
+      `<div class="metric"><a href="${Scankeep.escapeHtml(report.dashboard_url)}" target="_blank" rel="noopener noreferrer">Open SonarQube dashboard</a></div>`;
+  }
+
+  async function loadPage() {
+    const job = await Scankeep.api(`/scans/${encodeURIComponent(jobId)}`);
+    Scankeep.element("job-title").textContent = job.label || `${job.project_target_name} · ${job.branch}`;
+    Scankeep.element("job-summary").innerHTML =
+      `Execution ${Scankeep.status(job.status)} · Result ${Scankeep.resultStatus(job)} · ${Scankeep.escapeHtml(job.phase)} · ${Number(job.progress) || 0}%`;
+    renderMetadata(job);
+    renderReport(job.report);
+    const logs = Scankeep.element("logs");
+    logs.textContent = job.log || "No logs yet.";
+    logs.scrollTop = logs.scrollHeight;
+    clearTimeout(poller);
+    if (["queued", "running"].includes(job.status)) {
+      poller = setTimeout(() => loadPage().catch(error => Scankeep.message(error.message, true)), 2000);
+    }
+  }
+
+  Scankeep.element("refresh-job").addEventListener("click", async event => {
+    event.target.disabled = true;
+    try { await loadPage(); }
+    catch (error) { Scankeep.message(error.message, true); }
+    finally { event.target.disabled = false; }
+  });
+
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

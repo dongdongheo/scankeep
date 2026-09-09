@@ -1,0 +1,43 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Add Preset · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Add scan preset</h1><p class="muted">Save a validated branch configuration for repeat manual scans.</p></div>
+    <a href="{{ url_for('scankeep.preset_list') }}">← Back to presets</a>
+  </div>
+  <section class="card">
+    <form id="preset-form" class="form-grid">
+      <label class="full">Preset name<input name="name" maxlength="120" required></label>
+      <label>Security server<select id="server-select" name="security_server_id" required></select></label>
+      <label>Project target<select id="project-target-select" name="project_target_id" required></select></label>
+      <label>Sonar project key<select id="project-select" name="project_key" required></select></label>
+      <label>Branch<select id="branch-select" name="branch" required disabled><option>Choose a project target first</option></select></label>
+      <label class="full">Run label (optional)<input name="label" maxlength="120"></label>
+      <div class="form-actions">
+        <button class="primary" type="submit">Save preset</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const selection = Scankeep.createScanSelection();
+
+  Scankeep.element("preset-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      await Scankeep.api("/presets", {
+        method: "POST",
+        body: JSON.stringify(selection.payload(event.target)),
+      });
+      window.location.href = "/scankeep/presets";
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.submitter.disabled = false;
+    }
+  });
+  Scankeep.start(selection.load);
+</script>
+{% endblock %}

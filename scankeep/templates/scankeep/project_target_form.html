@@ -1,0 +1,46 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Add Project Target · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Add project target</h1><p class="muted">Map a security project to its source repository and optional monorepo path.</p></div>
+    <a href="{{ url_for('scankeep.project_target_management') }}">← Back to project targets</a>
+  </div>
+  <section class="card">
+    <form id="project-target-form" class="form-grid">
+      <label>Target name<input name="name" maxlength="120" required></label>
+      <label>Provider<select name="provider"><option value="github">GitHub</option><option value="gitlab">GitLab</option></select></label>
+      <label class="full">HTTPS clone URL<input name="url" type="url" required></label>
+      <label class="full">Repository token<input name="token" type="password" required autocomplete="new-password"></label>
+      <label>Security server<select name="security_server_id" id="server-select" required></select></label>
+      <label>Sonar project key<input name="project_key" required></label>
+      <label class="full">Scan path inside repo (optional)<input name="scan_path"></label>
+      <div class="form-actions"><button class="primary" type="submit">Validate and add target</button></div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+
+  async function loadPage() {
+    const { servers } = await Scankeep.api("/servers");
+    Scankeep.element("server-select").innerHTML = servers.length
+      ? servers.map(server => `<option value="${Scankeep.escapeHtml(server.id)}">${Scankeep.escapeHtml(server.name)}</option>`).join("")
+      : '<option value="">Add a security server first</option>';
+  }
+
+  Scankeep.element("project-target-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      const payload = Object.fromEntries(new FormData(event.target).entries());
+      await Scankeep.api("/project-targets", { method: "POST", body: JSON.stringify(payload) });
+      window.location.href = "/scankeep/project-targets";
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.submitter.disabled = false;
+    }
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

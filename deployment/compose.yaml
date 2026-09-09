@@ -1,0 +1,96 @@
+services:
+  initialize-data:
+    image: scankeep:local
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - >-
+        mkdir -p /var/lib/scankeep/logs
+        /var/lib/scankeep/cache
+        /var/lib/scankeep/work
+        && chown 0:0 /var/lib/scankeep
+        /var/lib/scankeep/logs
+        /var/lib/scankeep/cache
+        /var/lib/scankeep/work
+        && chmod 700 /var/lib/scankeep
+        /var/lib/scankeep/logs
+        /var/lib/scankeep/cache
+        /var/lib/scankeep/work
+        && chown 1000:1000 /var/lib/scankeep
+        /var/lib/scankeep/logs
+        /var/lib/scankeep/cache
+        /var/lib/scankeep/work
+    volumes:
+      - data:/var/lib/scankeep
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
+  scankeep:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    image: scankeep:local
+    depends_on:
+      initialize-data:
+        condition: service_completed_successfully
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${SCANKEEP_HOST:-127.0.0.1}:${SCANKEEP_PORT:-5002}:5002"
+    environment:
+      SCANKEEP_ACCESS_TOKEN_FILE: /run/secrets/access_token
+      SCANKEEP_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      SCANKEEP_DATA_DIR: /var/lib/scankeep
+      SCANKEEP_WORKERS: "${SCANKEEP_WORKERS:-2}"
+      SCANKEEP_GIT_TIMEOUT: "${SCANKEEP_GIT_TIMEOUT:-600}"
+      SCANKEEP_SCAN_TIMEOUT: "${SCANKEEP_SCAN_TIMEOUT:-3600}"
+      SCANKEEP_SCHEDULER_POLL_SECONDS: "${SCANKEEP_SCHEDULER_POLL_SECONDS:-30}"
+      SONAR_USER_HOME: /var/lib/scankeep/cache
+      TMPDIR: /var/lib/scankeep/work
+    secrets:
+      - access_token
+      - encryption_key
+    volumes:
+      - data:/var/lib/scankeep
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:5002/healthz', timeout=3).read()
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 45s
+
+secrets:
+  access_token:
+    file: .secrets/access_token
+  encryption_key:
+    file: .secrets/encryption_key
+
+volumes:
+  data:

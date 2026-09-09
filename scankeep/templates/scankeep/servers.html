@@ -1,0 +1,69 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Security Servers · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Security servers</h1><p class="muted">Configured SonarQube connections and current health.</p></div>
+    <div class="actions">
+      <button id="refresh-health" class="secondary" type="button">Refresh health</button>
+      <a class="button primary" href="{{ url_for('scankeep.server_create') }}">Add server</a>
+    </div>
+  </div>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th data-sort="name" aria-sort="none"><button class="sort-button" type="button">Name</button></th>
+          <th data-sort="url" aria-sort="none"><button class="sort-button" type="button">URL</button></th>
+          <th data-sort="status" aria-sort="none"><button class="sort-button" type="button">Status</button></th>
+          <th data-sort="version" aria-sort="none"><button class="sort-button" type="button">Version</button></th>
+          <th data-sort="latency" aria-sort="none"><button class="sort-button" type="button">Latency</button></th>
+          <th data-sort="checked" aria-sort="none"><button class="sort-button" type="button">Checked</button></th>
+          <th data-sort="created" aria-sort="none"><button class="sort-button" type="button">Created</button></th>
+        </tr></thead>
+        <tbody id="servers"><tr><td colspan="7" class="muted">Checking servers…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const table = Scankeep.createSortableTable("servers", {
+    name: server => server.name,
+    url: server => server.url,
+    status: server => server.status,
+    version: server => server.version,
+    latency: server => Number(server.latency_ms) || 0,
+    checked: server => server.checked_at,
+    created: server => server.created_at,
+  }, servers => servers.length
+    ? servers.map(server => `
+        <tr data-href="/scankeep/servers/${encodeURIComponent(server.id)}">
+          <td><strong>${Scankeep.escapeHtml(server.name)}</strong>${server.error ? `<div class="meta">${Scankeep.escapeHtml(server.error)}</div>` : ""}</td>
+          <td>${Scankeep.escapeHtml(server.url)}</td>
+          <td>${Scankeep.status(server.status)}</td>
+          <td>${Scankeep.escapeHtml(server.version || "—")}</td>
+          <td>${Number(server.latency_ms) || 0} ms</td>
+          <td>${Scankeep.escapeHtml(Scankeep.formatTime(server.checked_at))}</td>
+          <td>${Scankeep.escapeHtml(Scankeep.formatTime(server.created_at))}</td>
+        </tr>`).join("")
+    : '<tr><td colspan="7" class="muted">No security servers configured.</td></tr>');
+
+  async function loadPage() {
+    const { servers } = await Scankeep.api("/servers/health");
+    table.setItems(servers);
+  }
+
+  Scankeep.element("servers").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.element("refresh-health").addEventListener("click", async event => {
+    event.target.disabled = true;
+    try { await loadPage(); }
+    catch (error) { Scankeep.message(error.message, true); }
+    finally { event.target.disabled = false; }
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

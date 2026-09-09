@@ -1,0 +1,115 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Preset Details · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1 id="preset-title">Preset details</h1><p class="muted">Configuration and historical runs.</p></div>
+    <a href="{{ url_for('scankeep.preset_list') }}">← Back to presets</a>
+  </div>
+  <section class="card">
+    <h2>Preset configuration</h2>
+    <form id="preset-form" class="form-grid">
+      <label class="full">Preset name<input name="name" maxlength="120" required></label>
+      <label>Security server<select id="server-select" name="security_server_id" required></select></label>
+      <label>Project target<select id="project-target-select" name="project_target_id" required></select></label>
+      <label>Sonar project key<select id="project-select" name="project_key" required></select></label>
+      <label>Branch<select id="branch-select" name="branch" required disabled></select></label>
+      <label class="full">Run label (optional)<input name="label" maxlength="120"></label>
+      <div class="form-actions">
+        <button id="run-preset" class="primary" type="button">Run saved preset</button>
+        <button class="primary" type="submit">Save changes</button>
+        <button id="delete-preset" class="danger" type="button">Delete</button>
+      </div>
+    </form>
+  </section>
+  <section class="card">
+    <div class="section-heading">
+      <h2>Run history</h2>
+      <button id="refresh-runs" class="secondary" type="button">Refresh</button>
+    </div>
+    {% include "scankeep/_scan_filters.html" %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Label / project target</th><th>Trigger</th><th>Server / project</th><th>Branch / commit</th><th>Execution</th><th>Result</th><th>Created / duration</th></tr></thead>
+        <tbody id="runs"></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const presetId = {{ preset_id|tojson }};
+  const selection = Scankeep.createScanSelection();
+  const filters = Scankeep.createScanFilters({ preset_id: presetId });
+
+  async function loadPage() {
+    const [preset, history] = await Promise.all([
+      Scankeep.api(`/presets/${encodeURIComponent(presetId)}`),
+      Scankeep.api(filters.scansPath()),
+      filters.load(),
+    ]);
+    Scankeep.element("preset-title").textContent = preset.name;
+    const form = Scankeep.element("preset-form");
+    form.elements.name.value = preset.name;
+    form.elements.label.value = preset.label;
+    await selection.load({
+      securityServerId: preset.security_server_id,
+      projectTargetId: preset.project_target_id,
+      branch: preset.branch,
+    });
+    Scankeep.element("runs").innerHTML = Scankeep.jobRows(
+      history.scans, "This preset has not been run."
+    );
+  }
+
+  async function loadHistory() {
+    const { scans } = await Scankeep.api(filters.scansPath());
+    Scankeep.element("runs").innerHTML = Scankeep.jobRows(
+      scans, "This preset has not been run."
+    );
+  }
+
+  Scankeep.element("preset-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      await Scankeep.api(`/presets/${encodeURIComponent(presetId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(selection.payload(event.target)),
+      });
+      Scankeep.message("Scan preset updated.");
+      await loadPage();
+    } catch (error) { Scankeep.message(error.message, true); }
+    finally { event.submitter.disabled = false; }
+  });
+  Scankeep.element("run-preset").addEventListener("click", async event => {
+    event.target.disabled = true;
+    try {
+      const job = await Scankeep.api(`/presets/${encodeURIComponent(presetId)}/scans`, {
+        method: "POST", body: "{}",
+      });
+      window.location.href = `/scankeep/jobs/${encodeURIComponent(job.id)}`;
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.target.disabled = false;
+    }
+  });
+  Scankeep.element("delete-preset").addEventListener("click", async () => {
+    if (!window.confirm("Delete this scan preset? Historical runs are retained.")) return;
+    try {
+      await Scankeep.api(`/presets/${encodeURIComponent(presetId)}`, { method: "DELETE" });
+      window.location.href = "/scankeep/presets";
+    } catch (error) { Scankeep.message(error.message, true); }
+  });
+  Scankeep.element("runs").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.element("refresh-runs").addEventListener(
+    "click",
+    () => loadHistory().catch(error => Scankeep.message(error.message, true)),
+  );
+  filters.bind(loadHistory);
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

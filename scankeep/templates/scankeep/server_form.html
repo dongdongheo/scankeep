@@ -1,0 +1,34 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Add Security Server · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Add security server</h1><p class="muted">The connection and token are validated before storage.</p></div>
+    <a href="{{ url_for('scankeep.server_management') }}">← Back to servers</a>
+  </div>
+  <section class="card">
+    <form id="server-form" class="form-grid">
+      <label>Name<input name="name" maxlength="120" required placeholder="Production Sonar"></label>
+      <label>HTTPS URL<input name="url" type="url" required placeholder="https://sonar.example.com"></label>
+      <label class="full">User token<input name="token" type="password" required autocomplete="new-password"></label>
+      <div class="form-actions"><button class="primary" type="submit">Validate and add server</button></div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  Scankeep.element("server-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      const payload = Object.fromEntries(new FormData(event.target).entries());
+      await Scankeep.api("/servers", { method: "POST", body: JSON.stringify(payload) });
+      window.location.href = "/scankeep/servers";
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.submitter.disabled = false;
+    }
+  });
+  Scankeep.start();
+</script>
+{% endblock %}

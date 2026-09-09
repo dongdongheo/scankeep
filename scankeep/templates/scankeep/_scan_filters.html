@@ -1,0 +1,38 @@
+<form id="scan-filters" class="filter-grid">
+  <label>Sonar project<select name="project_key"><option value="">All projects</option></select></label>
+  {% if include_trigger_filter %}
+    <label>Trigger type
+      <select name="trigger_source">
+        <option value="">All triggers</option>
+        <option value="manual">Manual</option>
+        <option value="preset">Preset</option>
+        <option value="schedule">Schedule</option>
+      </select>
+    </label>
+  {% endif %}
+  <label>Label contains<input name="label" maxlength="120" placeholder="Any label"></label>
+  <label>Project target<select name="project_target_id"><option value="">All targets</option></select></label>
+  <label>Execution status
+    <select name="status">
+      <option value="">All executions</option>
+      <option value="queued">Queued</option>
+      <option value="running">Running</option>
+      <option value="succeeded">Succeeded</option>
+      <option value="failed">Failed</option>
+    </select>
+  </label>
+  <label>Scan result
+    <select name="result_status">
+      <option value="">All results</option>
+      <option value="passed">Passed</option>
+      <option value="failed">Failed</option>
+      <option value="pending">Pending</option>
+      <option value="unavailable">Unavailable</option>
+      <option value="other">Other</option>
+    </select>
+  </label>
+  <div class="filter-actions">
+    <button class="primary" type="submit">Apply filters</button>
+    <button id="clear-filters" class="secondary" type="button">Clear</button>
+  </div>
+</form>

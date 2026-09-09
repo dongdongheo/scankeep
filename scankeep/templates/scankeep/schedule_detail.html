@@ -1,0 +1,151 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Schedule Details · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1 id="schedule-title">Schedule details</h1><p class="muted">Edit the configuration, run it now, and review historical runs.</p></div>
+    <a href="{{ url_for('scankeep.schedule_list') }}">← Back to schedules</a>
+  </div>
+  <section class="card">
+    <h2>Schedule configuration</h2>
+    <form id="schedule-form" class="form-grid">
+      <label>Schedule name<input name="name" maxlength="120" required></label>
+      <label>Cron expression (UTC)<input name="cron_expression" maxlength="200" required></label>
+      <p id="cron-hint" class="muted full"></p>
+      <label>Security server<select id="server-select" name="security_server_id" required></select></label>
+      <label>Project target<select id="project-target-select" name="project_target_id" required></select></label>
+      <label>Sonar project key<select id="project-select" name="project_key" required></select></label>
+      <label>Branch<select id="branch-select" name="branch" required disabled></select></label>
+      <label class="full">Run label (optional)<input name="label" maxlength="120"></label>
+      <div class="form-actions">
+        <button id="run-schedule" class="primary" type="button">Run now</button>
+        <button class="primary" type="submit">Save changes</button>
+        <button id="toggle-schedule" class="secondary" type="button"></button>
+        <button id="delete-schedule" class="danger" type="button">Delete</button>
+      </div>
+    </form>
+    <dl id="metadata" class="metadata"></dl>
+  </section>
+  <section class="card">
+    <div class="section-heading">
+      <h2>Run history</h2>
+      <button id="refresh-runs" class="secondary" type="button">Refresh</button>
+    </div>
+    {% include "scankeep/_scan_filters.html" %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Label / project target</th><th>Trigger</th><th>Server / project</th><th>Branch / commit</th><th>Execution</th><th>Result</th><th>Created / duration</th></tr></thead>
+        <tbody id="runs"></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const scheduleId = {{ schedule_id|tojson }};
+  const selection = Scankeep.createScanSelection();
+  const filters = Scankeep.createScanFilters({ schedule_id: scheduleId });
+  let enabled;
+
+  Scankeep.element("cron-hint").textContent = Scankeep.cronHint();
+
+  async function loadPage() {
+    const [schedule, history] = await Promise.all([
+      Scankeep.api(`/schedules/${encodeURIComponent(scheduleId)}`),
+      Scankeep.api(filters.scansPath()),
+      filters.load(),
+    ]);
+    enabled = schedule.enabled;
+    Scankeep.element("schedule-title").textContent = schedule.name;
+    const form = Scankeep.element("schedule-form");
+    form.elements.name.value = schedule.name;
+    form.elements.cron_expression.value = schedule.cron_expression;
+    form.elements.label.value = schedule.label;
+    await selection.load({
+      securityServerId: schedule.security_server_id,
+      projectTargetId: schedule.project_target_id,
+      branch: schedule.branch,
+    });
+    Scankeep.element("toggle-schedule").textContent =
+      enabled ? "Pause schedule" : "Resume schedule";
+    const fields = [
+      ["Status", enabled ? "Enabled" : "Paused"],
+      ["Next run", Scankeep.formatTime(schedule.next_run_at)],
+      ["Last run", Scankeep.formatTime(schedule.last_run_at)],
+      ["Scan path", schedule.scan_path || "repository root"],
+      ["Created", Scankeep.formatTime(schedule.created_at)],
+      ["Last updated", Scankeep.formatTime(schedule.updated_at)],
+    ];
+    Scankeep.element("metadata").innerHTML = fields.map(([name, value]) =>
+      `<div><dt>${Scankeep.escapeHtml(name)}</dt><dd>${Scankeep.escapeHtml(value)}</dd></div>`
+    ).join("");
+    Scankeep.element("runs").innerHTML = Scankeep.jobRows(
+      history.scans, "This schedule has not run yet."
+    );
+  }
+
+  async function loadHistory() {
+    const { scans } = await Scankeep.api(filters.scansPath());
+    Scankeep.element("runs").innerHTML = Scankeep.jobRows(
+      scans, "This schedule has not run yet."
+    );
+  }
+
+  Scankeep.element("schedule-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      await Scankeep.api(`/schedules/${encodeURIComponent(scheduleId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(selection.payload(event.target)),
+      });
+      Scankeep.message("Schedule updated.");
+      await loadPage();
+    } catch (error) { Scankeep.message(error.message, true); }
+    finally { event.submitter.disabled = false; }
+  });
+  Scankeep.element("run-schedule").addEventListener("click", async event => {
+    event.target.disabled = true;
+    try {
+      const job = await Scankeep.api(
+        `/schedules/${encodeURIComponent(scheduleId)}/scans`,
+        { method: "POST", body: "{}" },
+      );
+      window.location.href = `/scankeep/jobs/${encodeURIComponent(job.id)}`;
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.target.disabled = false;
+    }
+  });
+  Scankeep.element("toggle-schedule").addEventListener("click", async event => {
+    event.target.disabled = true;
+    try {
+      await Scankeep.api(`/schedules/${encodeURIComponent(scheduleId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !enabled }),
+      });
+      await loadPage();
+    } catch (error) { Scankeep.message(error.message, true); }
+    finally { event.target.disabled = false; }
+  });
+  Scankeep.element("delete-schedule").addEventListener("click", async () => {
+    if (!window.confirm("Delete this schedule? Historical runs are retained.")) return;
+    try {
+      await Scankeep.api(`/schedules/${encodeURIComponent(scheduleId)}`, {
+        method: "DELETE",
+      });
+      window.location.href = "/scankeep/schedules";
+    } catch (error) { Scankeep.message(error.message, true); }
+  });
+  Scankeep.element("runs").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.element("refresh-runs").addEventListener(
+    "click",
+    () => loadHistory().catch(error => Scankeep.message(error.message, true)),
+  );
+  filters.bind(loadHistory);
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

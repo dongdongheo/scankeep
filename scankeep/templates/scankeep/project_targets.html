@@ -1,0 +1,60 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Project Targets · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Project targets</h1><p class="muted">Security projects mapped to their source repository and scan path.</p></div>
+    <a class="button primary" href="{{ url_for('scankeep.project_target_create') }}">Add project target</a>
+  </div>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th data-sort="name" aria-sort="none"><button class="sort-button" type="button">Name</button></th>
+          <th data-sort="provider" aria-sort="none"><button class="sort-button" type="button">Provider</button></th>
+          <th data-sort="url" aria-sort="none"><button class="sort-button" type="button">Repository URL</button></th>
+          <th data-sort="server" aria-sort="none"><button class="sort-button" type="button">Security server</button></th>
+          <th data-sort="project" aria-sort="none"><button class="sort-button" type="button">Project key</button></th>
+          <th data-sort="path" aria-sort="none"><button class="sort-button" type="button">Scan path</button></th>
+          <th data-sort="created" aria-sort="none"><button class="sort-button" type="button">Created</button></th>
+        </tr></thead>
+        <tbody id="project-targets"></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const table = Scankeep.createSortableTable("project-targets", {
+    name: projectTarget => projectTarget.name,
+    provider: projectTarget => projectTarget.provider,
+    url: projectTarget => projectTarget.url,
+    server: projectTarget => projectTarget.security_server_name,
+    project: projectTarget => projectTarget.project_key,
+    path: projectTarget => projectTarget.scan_path,
+    created: projectTarget => projectTarget.created_at,
+  }, projectTargets => projectTargets.length
+    ? projectTargets.map(projectTarget => `
+        <tr data-href="/scankeep/project-targets/${encodeURIComponent(projectTarget.id)}">
+          <td><strong>${Scankeep.escapeHtml(projectTarget.name)}</strong></td>
+          <td>${Scankeep.escapeHtml(projectTarget.provider)}</td>
+          <td>${Scankeep.escapeHtml(projectTarget.url)}</td>
+          <td>${Scankeep.escapeHtml(projectTarget.security_server_name)}</td>
+          <td>${Scankeep.escapeHtml(projectTarget.project_key)}</td>
+          <td>${Scankeep.escapeHtml(projectTarget.scan_path || "repository root")}</td>
+          <td>${Scankeep.escapeHtml(Scankeep.formatTime(projectTarget.created_at))}</td>
+        </tr>`).join("")
+    : '<tr><td colspan="7" class="muted">No project targets configured.</td></tr>');
+
+  async function loadPage() {
+    const { project_targets: projectTargets } = await Scankeep.api("/project-targets");
+    table.setItems(projectTargets);
+  }
+
+  Scankeep.element("project-targets").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

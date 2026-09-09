@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.coverage
+.git/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+build/
+data/
+dist/
+deployment/.env
+deployment/.secrets/

@@ -1,0 +1,57 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Preset Scans · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Preset scans</h1><p class="muted">Reusable scan configurations for quick manual runs.</p></div>
+    <a class="button primary" href="{{ url_for('scankeep.preset_create') }}">Add preset</a>
+  </div>
+  <section class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th data-sort="name" aria-sort="none"><button class="sort-button" type="button">Name</button></th>
+          <th data-sort="target" aria-sort="none"><button class="sort-button" type="button">Project target</button></th>
+          <th data-sort="server" aria-sort="none"><button class="sort-button" type="button">Server / project</button></th>
+          <th data-sort="branch" aria-sort="none"><button class="sort-button" type="button">Branch</button></th>
+          <th data-sort="label" aria-sort="none"><button class="sort-button" type="button">Label</button></th>
+          <th data-sort="created" aria-sort="none"><button class="sort-button" type="button">Created</button></th>
+        </tr></thead>
+        <tbody id="presets"></tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const table = Scankeep.createSortableTable("presets", {
+    name: preset => preset.name,
+    target: preset => preset.project_target_name,
+    server: preset => `${preset.security_server_name} ${preset.project_key}`,
+    branch: preset => preset.branch,
+    label: preset => preset.label,
+    created: preset => preset.created_at,
+  }, presets => presets.length
+    ? presets.map(preset => `
+        <tr data-href="/scankeep/presets/${encodeURIComponent(preset.id)}">
+          <td><strong>${Scankeep.escapeHtml(preset.name)}</strong></td>
+          <td>${Scankeep.escapeHtml(preset.project_target_name)}<div class="meta">${Scankeep.escapeHtml(preset.provider)}</div></td>
+          <td>${Scankeep.escapeHtml(preset.security_server_name)}<div class="meta">${Scankeep.escapeHtml(preset.project_key)}</div></td>
+          <td>${Scankeep.escapeHtml(preset.branch)}</td>
+          <td>${Scankeep.escapeHtml(preset.label || "—")}</td>
+          <td>${Scankeep.escapeHtml(Scankeep.formatTime(preset.created_at))}</td>
+        </tr>`).join("")
+    : '<tr><td colspan="6" class="muted">No scan presets configured.</td></tr>');
+
+  async function loadPage() {
+    const { presets } = await Scankeep.api("/presets");
+    table.setItems(presets);
+  }
+
+  Scankeep.element("presets").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

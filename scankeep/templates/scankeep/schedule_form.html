@@ -1,0 +1,47 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Add Schedule · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Add scan schedule</h1><p class="muted">Use a standard five-field cron expression evaluated in UTC.</p></div>
+    <a href="{{ url_for('scankeep.schedule_list') }}">← Back to schedules</a>
+  </div>
+  <section class="card">
+    <form id="schedule-form" class="form-grid">
+      <label>Schedule name<input name="name" maxlength="120" required></label>
+      <label>Cron expression (UTC)<input name="cron_expression" maxlength="200" value="0 0 * * *" required placeholder="0 0 * * *"></label>
+      <p class="muted full">Fields: minute, hour, day of month, month, day of week. Example: <code>0 2 * * 1-5</code> runs at 02:00 UTC on weekdays.</p>
+      <p id="cron-hint" class="muted full"></p>
+      <label>Security server<select id="server-select" name="security_server_id" required></select></label>
+      <label>Project target<select id="project-target-select" name="project_target_id" required></select></label>
+      <label>Sonar project key<select id="project-select" name="project_key" required></select></label>
+      <label>Branch<select id="branch-select" name="branch" required disabled><option>Choose a project target first</option></select></label>
+      <label class="full">Run label (optional)<input name="label" maxlength="120"></label>
+      <div class="form-actions">
+        <button class="primary" type="submit">Save schedule</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const selection = Scankeep.createScanSelection();
+  Scankeep.element("cron-hint").textContent = Scankeep.cronHint();
+
+  Scankeep.element("schedule-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      await Scankeep.api("/schedules", {
+        method: "POST",
+        body: JSON.stringify(selection.payload(event.target)),
+      });
+      window.location.href = "/scankeep/schedules";
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.submitter.disabled = false;
+    }
+  });
+  Scankeep.start(selection.load);
+</script>
+{% endblock %}

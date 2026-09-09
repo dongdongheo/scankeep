@@ -1,0 +1,109 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Manual Scans · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1>Manual scans</h1><p class="muted">Configure a one-time scan and review manually triggered runs.</p></div>
+  </div>
+  <div id="readiness" class="notice"></div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Trigger scan</h2>
+      <form id="scan-form" class="form-grid">
+        <label>Security server<select id="server-select" name="security_server_id" required></select></label>
+        <label>Project target<select id="project-target-select" name="project_target_id" required></select></label>
+        <label>Sonar project key<select id="project-select" name="project_key" required></select></label>
+        <label>Branch<select id="branch-select" name="branch" required disabled><option>Choose a project target first</option></select></label>
+        <label class="full">Run label (optional)<input name="label" maxlength="120" placeholder="Release validation"></label>
+        <div class="form-actions">
+          <button class="primary" type="submit">Start scan</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card full">
+      <div class="section-heading">
+        <h2>Manual scan history</h2>
+        <button id="refresh-runs" class="secondary" type="button">Refresh</button>
+      </div>
+      {% include "scankeep/_scan_filters.html" %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Label / project target</th><th>Trigger</th><th>Server / project</th><th>Branch / commit</th><th>Execution</th><th>Result</th><th>Created / duration</th></tr></thead>
+          <tbody id="scans"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const selection = Scankeep.createScanSelection();
+  const filters = Scankeep.createScanFilters({ trigger_source: "manual" });
+  let poller;
+
+  function renderReadiness(config) {
+    const missing = [];
+    if (!config.encryption_ready) missing.push("credential encryption");
+    if (!config.runtime.git) missing.push("git");
+    if (!config.runtime.sonar_scanner) missing.push("SonarScanner");
+    const readiness = Scankeep.element("readiness");
+    readiness.className = `notice${missing.length ? " warning" : ""}`;
+    readiness.textContent = missing.length
+      ? `Setup required: ${missing.join(", ")} unavailable.`
+      : "Scankeep is ready for scans.";
+  }
+
+  async function loadScans() {
+    const { scans } = await Scankeep.api(filters.scansPath());
+    Scankeep.element("scans").innerHTML = Scankeep.jobRows(
+      scans, "No manual scans have been started."
+    );
+    clearTimeout(poller);
+    if (scans.some(job => ["queued", "running"].includes(job.status))) {
+      poller = setTimeout(
+        () => loadScans().catch(error => Scankeep.message(error.message, true)),
+        3000,
+      );
+    }
+  }
+
+  async function loadPage() {
+    const [config] = await Promise.all([
+      Scankeep.api("/config"),
+      selection.load(),
+      filters.load(),
+    ]);
+    renderReadiness(config);
+    await loadScans();
+  }
+
+  Scankeep.element("scan-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      const payload = selection.payload(event.target);
+      const job = await Scankeep.api("/scans", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      window.location.href = `/scankeep/jobs/${encodeURIComponent(job.id)}`;
+    } catch (error) {
+      Scankeep.message(error.message, true);
+      event.submitter.disabled = false;
+    }
+  });
+  Scankeep.element("scans").addEventListener("click", event => {
+    const row = event.target.closest("tr[data-href]");
+    if (row) window.location.href = row.dataset.href;
+  });
+  Scankeep.element("refresh-runs").addEventListener(
+    "click",
+    () => loadScans().catch(error => Scankeep.message(error.message, true)),
+  );
+  filters.bind(loadScans);
+
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}

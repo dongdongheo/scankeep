@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Scankeep{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('scankeep.static', filename='scankeep.css') }}">
+  <script src="{{ url_for('scankeep.static', filename='scankeep.js') }}"></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="{{ url_for('scankeep.home') }}">Scankeep</a>
+    <nav>
+      <div class="nav-menu">
+        <a class="{{ 'active' if active_page in ('home', 'manual_scans', 'presets') else '' }}" href="{{ url_for('scankeep.home') }}">Home</a>
+        <div class="nav-dropdown">
+          <a href="{{ url_for('scankeep.manual_scans') }}">Manual scans</a>
+          <a href="{{ url_for('scankeep.preset_list') }}">Preset scans</a>
+        </div>
+      </div>
+      <a class="{{ 'active' if active_page == 'schedules' else '' }}" href="{{ url_for('scankeep.schedule_list') }}">Schedules</a>
+      <a class="{{ 'active' if active_page == 'project_targets' else '' }}" href="{{ url_for('scankeep.project_target_management') }}">Project targets</a>
+      <a class="{{ 'active' if active_page == 'servers' else '' }}" href="{{ url_for('scankeep.server_management') }}">Security servers</a>
+      <button id="logout" class="link-button" type="button">Sign out</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="login-card" class="card login-card">
+      <h1>Scankeep access</h1>
+      <p class="muted">Enter the access token configured on the Scankeep host. It remains in this browser tab only.</p>
+      <form id="login-form" class="form-grid">
+        <label class="full">Access token<input id="access-token" type="password" autocomplete="current-password" required></label>
+        <div class="form-actions"><button class="primary" type="submit">Connect</button></div>
+      </form>
+      <div id="login-error" class="notice error hidden"></div>
+    </section>
+
+    <div id="app">
+      <div id="message" class="notice hidden"></div>
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

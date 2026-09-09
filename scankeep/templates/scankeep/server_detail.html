@@ -1,0 +1,62 @@
+{% extends "scankeep/base.html" %}
+{% block title %}Server Details · Scankeep{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div><h1 id="server-title">Security server</h1><p id="health" class="muted">Checking health…</p></div>
+    <a href="{{ url_for('scankeep.server_management') }}">← Back to servers</a>
+  </div>
+  <section class="card">
+    <form id="server-form" class="form-grid">
+      <label>Name<input name="name" maxlength="120" required></label>
+      <label>HTTPS URL<input name="url" type="url" required></label>
+      <label class="full">Replacement token (optional)<input name="token" type="password" autocomplete="new-password" placeholder="Leave blank to keep current token"></label>
+      <div class="form-actions">
+        <button id="delete-server" class="danger" type="button">Delete server</button>
+        <button class="primary" type="submit">Validate and save</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  const Scankeep = window.Scankeep;
+  const serverId = {{ server_id|tojson }};
+
+  async function loadPage() {
+    const [server, health] = await Promise.all([
+      Scankeep.api(`/servers/${encodeURIComponent(serverId)}`),
+      Scankeep.api(`/servers/${encodeURIComponent(serverId)}/health`),
+    ]);
+    Scankeep.element("server-title").textContent = server.name;
+    const form = Scankeep.element("server-form");
+    form.elements.name.value = server.name;
+    form.elements.url.value = server.url;
+    Scankeep.element("health").innerHTML =
+      `${Scankeep.status(health.status)} · ${Scankeep.escapeHtml(health.version || "version unavailable")} · ${Number(health.latency_ms) || 0} ms` +
+      (health.error ? ` · ${Scankeep.escapeHtml(health.error)}` : "");
+  }
+
+  Scankeep.element("server-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    event.submitter.disabled = true;
+    try {
+      const payload = Object.fromEntries(new FormData(event.target).entries());
+      await Scankeep.api(`/servers/${encodeURIComponent(serverId)}`, {
+        method: "PATCH", body: JSON.stringify(payload),
+      });
+      event.target.elements.token.value = "";
+      Scankeep.message("Security server updated.");
+      await loadPage();
+    } catch (error) { Scankeep.message(error.message, true); }
+    finally { event.submitter.disabled = false; }
+  });
+  Scankeep.element("delete-server").addEventListener("click", async () => {
+    if (!window.confirm("Delete this security server?")) return;
+    try {
+      await Scankeep.api(`/servers/${encodeURIComponent(serverId)}`, { method: "DELETE" });
+      window.location.href = "/scankeep/servers";
+    } catch (error) { Scankeep.message(error.message, true); }
+  });
+  Scankeep.start(loadPage);
+</script>
+{% endblock %}
